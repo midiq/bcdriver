@@ -1,0 +1,31 @@
+bcprobe: Behringer USB-MIDI Gate A probe (open test: no, seize: no)
+Device VID=0x1397 PID=0x00bc bcdDevice=0x0100 speed=full address=1 configurations=1
+
+Configuration descriptor 0 (101 bytes):
+  CONFIG: wTotalLength=101 bNumInterfaces=2 bConfigurationValue=1 bmAttributes=0x40 bMaxPower=0mA
+  INTERFACE 0 alt=0: class=0x01 subclass=0x01 protocol=0x00 numEndpoints=0
+    CS_INTERFACE (audio) subtype=0x01 len=9
+  INTERFACE 1 alt=0: class=0x01 subclass=0x03 protocol=0x00 numEndpoints=2  [MIDIStreaming]
+    MS_HEADER bcdMSC=0x0100 wTotalLength=65
+    MIDI_IN_JACK id=1 type=embedded
+    MIDI_IN_JACK id=2 type=external
+    MIDI_OUT_JACK id=3 type=embedded sources=[2.1]
+    MIDI_OUT_JACK id=4 type=external sources=[1.1]
+    ENDPOINT 0x81 IN  bulk wMaxPacketSize=64 bInterval=0
+      MS_GENERAL bNumEmbMIDIJack=1 jacks=[3]
+    ENDPOINT 0x02 OUT bulk wMaxPacketSize=4 bInterval=0
+      MS_GENERAL bNumEmbMIDIJack=1 jacks=[1]
+  raw:
+    0000  09 02 65 00 02 01 00 40 00 09 04 00 00 00 01 01
+    0010  00 00 09 24 01 00 01 09 00 01 01 09 04 01 00 02
+    0020  01 03 00 00 07 24 01 00 01 41 00 06 24 02 01 01
+    0030  00 06 24 02 02 02 00 09 24 03 01 03 01 02 01 00
+    0040  09 24 03 02 04 01 01 01 00 09 05 81 02 40 00 00
+    0050  00 00 05 25 01 01 03 09 05 02 02 04 00 00 00 00
+    0060  05 25 01 01 01
+
+Interface 0: class=0x01 subclass=0x01 endpoints=0
+
+Interface 1: class=0x01 subclass=0x03 endpoints=2  [MIDIStreaming]
+
+1 device(s) probed.

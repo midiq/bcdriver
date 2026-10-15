@@ -1,0 +1,19 @@
+BCR2000 CoreMIDI control experiment — 2026-10-15, macOS 26.6.2, Apple silicon, BCR2000 in U-1 mode
+
+Receive (device -> host), bcmidi monitor on "BCR2000 Port 1", encoder turned:
+  <- raw[3] B0 46 01 ... B0 46 32   (CC 70 ch1; receive path OK)
+
+Send (host -> device):
+  bcmidi identity                 Behringer identity (F0 00 20 32 7F 15 01 F7): no reply
+                                  Universal identity (F0 7E 7F 06 01 F7):       no reply
+  bcmidi cc  (Port 1/2/3)         CC 70 sweep 0..127..0, 150 ms steps: LED ring unchanged
+  sendmidi dev "BCR2000 Port 1" cc 70 N (independent tool): LED ring unchanged
+  After power-cycling the BCR2000: identical results
+
+CoreMIDI debug log during identity send:
+  SysexSender.cpp:176 sent 8 bytes to destination 4362309 (0 remain)
+  SysexSender.cpp:153 req: complete = false, toSend = 0
+  No errors from MIDIServer or com.apple.iousbhost.
+
+Registry state: IOUSBHostInterface@1 UsbExclusiveOwner = MIDIServer; kUSBCurrentConfiguration = 1;
+  bulk OUT 0x02 wMaxPacketSize = 4 (illegal for full-speed bulk per USB 2.0 §5.8.3).

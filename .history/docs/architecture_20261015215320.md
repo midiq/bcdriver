@@ -1,0 +1,100 @@
+# Architecture and Feasibility Gates
+
+**Status:** Gate A (ownership) and the CoreMIDI control experiment have both been run on a BCR2000 (2026-10-15). App-hosted ownership is blocked, and **no host-to-device output of any kind reaches the unit** through Apple's driver on this host. See the results below.
+
+## Problem boundary
+
+The failure described for Apple silicon is outgoing USB SysEx: preset data sent to a BCR2000 or BCF2000 can be dropped or corrupted, while receiving MIDI works. The experiment must control the host-to-device USB transfer path, not just add waits between calls made through the existing MIDI API.
+
+The working hypothesis is that a bridge which owns the USB-MIDI interface and submits one transfer at a time can provide meaningful backpressure. This is unproven. The USB descriptors, endpoint layout, achievable transfer cadence, and device firmware behavior must be measured on hardware.
+
+## Candidate A: app-hosted USB-MIDI bridge
+
+This is the first path to test because the Eleven Rack project demonstrates a user-space IOKit/IOUSBLib engine without a DriverKit system extension. That project claims its audio interfaces, though, and leaves MIDI attached to Apple's USB-MIDI driver; it is not evidence that the BCR/BCF MIDI interface can be seized.
+
+Proposed data flow if ownership succeeds:
+
+```text
+MIDI apps / Web MIDI
+        | CoreMIDI virtual destination
+        v
+bridge process -> ordered SysEx queue -> USB-MIDI event packets -> USB bulk OUT -> BCR2000 / BCF2000
+bridge process <- USB-MIDI bulk IN <- MIDI bytes              <- CoreMIDI virtual source
+```
+
+The process would publish a virtual CoreMIDI destination for sends and a virtual source for received MIDI. Those ports exist while the bridge runs; this is an app-hosted bridge, not a transparent system driver. It must preserve message order, forward non-SysEx MIDI, and avoid unbounded buffering. USB-MIDI 1.0 packetization and SysEx reassembly must follow the descriptors actually reported by each device.
+
+The pacing point must be the USB OUT transfer submission/completion path. Sending delays through the existing CoreMIDI USB endpoint would not test whether bypassing Apple's transport scheduling helps. The pacing interval and transfer size remain experimental parameters; BCL replies and a read-back are the correctness checks.
+
+### Gate A: device ownership
+
+On a target Apple silicon Mac, capture each device's VID/PID, configurations, MIDI interface numbers, endpoint directions, transfer type, and maximum packet sizes. Then test whether a small IOKit process can open the USB device and claim the MIDI interface without disrupting other interfaces or leaving the device wedged.
+
+`USBDeviceOpenSeize` is a possibility to test, not a guaranteed API contract for these devices. The reference project uses it as a fallback for the Eleven Rack audio device; that does not establish that it can replace Apple's class driver for a BCR/BCF.
+
+Stop here if ownership cannot be acquired and released cleanly. Do not attempt preset writes during this gate.
+
+#### Gate A result (BCR2000, U-1 mode, macOS 26.6.2, M-series)
+
+Captured with `Tools/bcprobe`; raw output in `docs/captures/`.
+
+- VID `0x1397`, PID `0x00BC`, bcdDevice `0x0100`, full-speed (12 Mb/s), one configuration, two interfaces.
+- Interface 0: Audio Control, no endpoints. Interface 1: MIDIStreaming, bulk IN `0x81` `wMaxPacketSize=64`, bulk OUT `0x02` **`wMaxPacketSize=4`**. One embedded IN jack (1) and one embedded OUT jack (3), each with one external counterpart.
+- `USBInterfaceOpen` and `USBInterfaceOpenSeize` on interface 1 both return `kIOReturnExclusiveAccess`. The registry shows `UsbExclusiveOwner = MIDIServer`; Apple's class driver holds the interface and cannot be displaced from user space. **Candidate A is closed.**
+
+The 4-byte OUT max packet size is the main lead. Every host-to-device bulk transfer carries exactly one USB-MIDI event packet, so a long SysEx becomes a stream of back-to-back 4-byte transactions. A full-speed bus can deliver one such packet per frame slot with no gap; the device firmware must drain each 4-byte packet before the next arrives, and the host controller decides that cadence, not the MIDI API caller.
+
+### Control experiment: CoreMIDI pacing
+
+Before committing to a DriverKit extension, measure what the existing Apple USB-MIDI path actually does. `Tools/bcmidi` sends BCL lines through CoreMIDI to the BCR2000 destination and tracks the `0x21` reply per line (index + error code), so dropped or corrupted lines are visible without a read-back. Variables:
+
+- transfer mode: `MIDISendSysex` (driver-chunked) versus `MIDISend` with explicit packets of `--chunk` bytes and per-packet timestamps `--gap-us` apart;
+- `--ack`: wait for each `0x21` before sending the next line (upper bound on reliability, lower bound on speed).
+
+Outcomes:
+
+- If `--ack` is reliable but unpaced sends drop lines, the problem is host cadence and a user-space bridge publishing a virtual CoreMIDI destination (Candidate A without USB ownership) is a viable product even though it cannot own the interface.
+- If even `--ack` single-line sends fail, the fault is inside a single transfer and only a transport below CoreMIDI (Candidate B) can address it.
+- If timestamped 4-byte packet pacing fixes it, the same virtual-destination bridge can apply that pacing.
+
+#### Control experiment result (BCR2000, U-1, macOS 26.6.2, M-series)
+
+Tools: `Tools/bcmidi` plus the independent `sendmidi` CLI as a cross-check.
+
+- Receive path works: turning an encoder delivers `B0 46 xx` on "BCR2000 Port 1" (`bcmidi monitor`).
+- Behringer identity request (`0x01`) gets **no reply**. A universal identity request also gets no reply, but the BC spec does not list that message, so it is not evidence either way.
+- A slow CC 70 sweep (3-byte channel messages, 150 ms apart) produces **no LED-ring movement** on Port 1, Port 2 or Port 3, from `bcmidi` and from `sendmidi`. Power-cycling the unit changes nothing.
+- CoreMIDI's `SysExSender` logs the bytes as sent (`sent 8 bytes to destination ... (0 remain)`); MIDIServer and `com.apple.iousbhost` log no errors. The failure is silent below CoreMIDI.
+
+The pacing experiment is therefore moot on this host: there is nothing to pace. **Every host-to-device message is lost, not just long SysEx.**
+
+#### Root-cause hypothesis: illegal `wMaxPacketSize=4` on the bulk OUT endpoint
+
+USB 2.0 §5.8.3 only permits 8, 16, 32 or 64 bytes for a full-speed bulk endpoint. The BCR2000 declares 4. The Linux xHCI driver works around this explicitly (`xhci_endpoint_init`: "FS bulk supports 8, 16, 32 or 64", `clamp_val(max_packet, 8, 64)`), and ALSA's USB-MIDI driver then sends 4-byte URBs so the device never sees more than one event per packet. Pre-xHCI Intel Macs (EHCI/UHCI) did not validate the value. Apple's xHCI stack on M-series is the odd one out: either the OUT endpoint is never configured, or packets are built against a size the firmware rejects. Both outcomes look identical from CoreMIDI — writes "succeed", nothing arrives — and both are consistent with the community report that input works while output fails.
+
+This also predicts that the same unit will work on the same Mac through a class-compliant USB-MIDI interface with legal endpoint sizes via DIN (the known workaround), and that a BCF2000 shows the identical descriptor and symptom. Both predictions are still to be checked.
+
+### Gate B: safe transport proof
+
+With the interface claimed:
+
+1. Send a non-destructive universal MIDI identity request and verify the device's reply.
+2. Receive and forward ordinary MIDI input.
+3. Send a BCL request that only reads device state; compare the complete response with a known-good transfer.
+4. Only then test a preset write, starting with a temporary preset and verifying by reading it back.
+5. Repeat on both BCR2000 and BCF2000, disconnect/reconnect, and confirm the built-in CoreMIDI endpoint is restored when the bridge exits.
+
+Record raw USB-MIDI packets, timestamps, BCL replies, and read-back results for each run. A successful write without a matching read-back is not a pass.
+
+## Candidate B: DriverKit system extension
+
+If app-hosted ownership fails, evaluate a hardware-backed MIDI driver using `IOUserMIDIDriver`/`IOUserMIDIDevice` from MIDIDriverKit together with USBDriverKit transport. This can publish CoreMIDI ports as a driver extension rather than as a running app.
+
+Apple's current documentation lists MIDIDriverKit for macOS 15 and later. Development and distribution require DriverKit, MIDI-family, and USB-transport entitlements/provisioning. Apple's MIDI sample demonstrates a virtual device and the system-extension lifecycle, but does not implement USB device transport. Entitlement approval and matching the class-compliant interfaces are early gates, not implementation details to postpone.
+
+## Decision rule
+
+- ~~If direct app-hosted ownership works and transport tests pass, implement the bridge and its launch/permission UX.~~ Ownership failed (Gate A result above).
+- ~~If the CoreMIDI control experiment shows that per-line acknowledgement or packet pacing is sufficient, implement a virtual-destination bridge on top of CoreMIDI.~~ Not applicable: no output reaches the device at all, so a CoreMIDI-level bridge cannot help.
+- The remaining software route is a DriverKit extension (Candidate B) that owns the MIDIStreaming interface and opens the bulk OUT pipe itself. Its first gate is whether `IOUSBHostPipe` can be opened at all on an endpoint declaring `wMaxPacketSize=4`, and whether 4-byte writes are delivered. That is a yes/no USBDriverKit experiment before any MIDIDriverKit work.
+- If USBDriverKit cannot open or drive that endpoint either, the defect is in Apple's xHCI host stack and no third-party driver can fix it; document that and point users to DIN.
