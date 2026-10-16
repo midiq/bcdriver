@@ -91,7 +91,7 @@ It also means **Candidate B is dead on arrival**: a DriverKit extension would as
 
 `Kext/BCDescriptorFix.kext` is exactly that: it matches `idVendor=0x1397 idProduct=0x00BC` and supplies the BCR2000's own 101-byte configuration descriptor with byte 91 changed from `0x04` to `0x08`. Nothing else is altered, so `AppleUSBMIDI` still binds and CoreMIDI still shows "BCR2000 Port 1/2/3". The device never sees the change; it only affects what the host believes the endpoint's max packet size is, and USB-MIDI OUT packets are 4 bytes, so an 8-byte host-side maximum is always satisfied.
 
-Setting the property from user space (`Tools/bcoverride`) returns `kIOReturnUnsupported`, as expected for a kernel-owned key, so the kext is the only delivery path. On Apple silicon it needs Reduced Security with user-approved kernel extensions (already the case on the test Mac, which runs a MOTU kext), installation under `/Library/Extensions`, approval in System Settings, and a reboot to rebuild the kernel collection. A codeless kext carries no executable and needs no kext-signing identity.
+Setting the property from user space (`Tools/bcoverride`) returns `kIOReturnUnsupported` — **also when run as root** — so `IOUSBHostDevice::setProperties` does not accept the key from any client and a matching personality is the only delivery path. On Apple silicon a kext needs either a Developer ID signature or Permissive Security; there is no third option, and no user-space (Eleven-Rack-style) design can reach a fault that lives in endpoint creation.
 
 ### Gate C: does the override take effect
 
@@ -139,5 +139,6 @@ Apple's current documentation lists MIDIDriverKit for macOS 15 and later. Develo
 - ~~If direct app-hosted ownership works and transport tests pass, implement the bridge and its launch/permission UX.~~ Ownership failed (Gate A result above).
 - ~~If the CoreMIDI control experiment shows that per-line acknowledgement or packet pacing is sufficient, implement a virtual-destination bridge on top of CoreMIDI.~~ Not applicable: no output reaches the device at all, so a CoreMIDI-level bridge cannot help.
 - ~~The remaining software route is a DriverKit extension (Candidate B) that owns the MIDIStreaming interface and opens the bulk OUT pipe itself.~~ Closed by the kernel log: the host controller rejects the endpoint before any driver can open it.
-- **Candidate C is the solution.** Gate C and the Gate B round trip pass on the BCR2000. The deliverable is the codeless kext plus install/approval UX.
-- Open items: capture a BCF2000 descriptor and add its personality (expected identical except PID `0x00BA`? — verify, do not assume); obtain a Developer ID with the kext-signing entitlement so users do not need Permissive Security; file Feedback with Apple asking for the Linux-style clamp in `IOUSBHostFamily`.
+- **Candidate C is the solution.** Gate C and the Gate B round trip pass on the BCR2000. The deliverable is the codeless kext plus `Kext/install.sh` and `docs/INSTALL.md`.
+- Distribution decision: the maintainer has no Apple Developer account and does not want one, so the shipped path is ad-hoc signing + a one-time `csrutil enable --without kext` per user, documented honestly, with DIN as the zero-install alternative. A Developer-ID-signed build from a contributor would remove the Recovery step; the kext itself would not change.
+- Open items: capture a BCF2000 descriptor and add its personality (verify PID and bytes, do not assume); file Feedback with Apple asking for the Linux-style clamp in `IOUSBHostFamily`.

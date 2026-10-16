@@ -1,37 +1,45 @@
-# MidiQ BCR/BCF USB-MIDI Bridge
+# BCDescriptorFix — BCR2000 / BCF2000 USB output on Apple silicon
 
-An experimental macOS Apple silicon project to make outgoing USB SysEx transfers reliable with the Behringer BCR2000 and BCF2000. Normal MIDI input works; the reported failure is during preset sends to the device.
+Behringer's BCR2000 and BCF2000 are class-compliant USB-MIDI controllers that work out of the box on Linux, Windows and Intel Macs. On **Apple silicon** Macs they are receive-only: knob and fader movements arrive, but nothing the Mac sends — presets, SysEx, LED feedback — ever reaches the unit.
 
-**Status: root cause found and fixed on a BCR2000 (2026-10-16).** The BCR2000 declares an illegal `wMaxPacketSize=4` on its bulk OUT endpoint; Apple's USB host stack on Apple silicon rejects the endpoint (`AppleUSBXHCICommandRing::addEndpoint` code 17), so *nothing* the host sends ever reaches the unit while input keeps working. `Kext/BCDescriptorFix.kext` is a codeless kext that overrides that one byte (4 → 8). With it loaded, identity requests are answered, a 14 KB SysEx chain transfers with zero loss through the stock CoreMIDI driver, and a preset write + read-back is byte-identical. Details and measurements in [docs/architecture.md](docs/architecture.md).
+**Root cause (found 2026-10-16, see [docs/architecture.md](docs/architecture.md)):** the units declare an illegal `wMaxPacketSize = 4` on their bulk OUT endpoint (USB 2.0 §5.8.3 allows 8/16/32/64). Linux clamps it; Apple's USB host stack on M-series rejects the endpoint outright (`AppleUSBXHCICommandRing::addEndpoint` → code 17), so the OUT pipe is never created. Writes "succeed" at the CoreMIDI layer and go nowhere. The widely repeated explanation — "M-series sends too fast" — is wrong; no bytes were leaving the host.
 
-## Why this is a separate project
+**The fix:** `Kext/BCDescriptorFix.kext`, a *codeless* kernel extension (a plist, no executable) that uses Apple's own `kUSBDescriptorOverride` mechanism to present the device's descriptor with that one byte changed, 4 → 8. Apple's stock USB-MIDI driver then works normally. Verified on a BCR2000 (firmware 1.10, macOS 26.6.2): identity replies, LED feedback, a 14 KB / 202-line SysEx chain with zero loss, and a preset write + read-back that is byte-identical.
 
-The MidiQ editor currently uses Web MIDI/CoreMIDI. This project explores a macOS USB transport layer that could expose virtual CoreMIDI ports to the editor and other MIDI applications, while forwarding incoming MIDI and pacing outgoing SysEx at the USB transfer boundary.
+## Install
 
-The [Eleven Rack Driver](https://github.com/Matt-Housley/eleven-rack-driver) is useful precedent for an app-hosted USB engine, but it is not a MIDI-driver implementation. Its `erengine` process uses IOKit/IOUSBLib for the audio interfaces and explicitly leaves the class-compliant MIDI interface to Apple's `AppleMIDIUSBDriver`. It does not establish that a process can take over the BCR2000/BCF2000 MIDI interface.
+→ **[docs/INSTALL.md](docs/INSTALL.md)**
 
-## First milestone
+Short version: this kext is not signed with a paid Apple Developer certificate, so each user must once run `csrutil enable --without kext` from Recovery, then `./Kext/install.sh`, approve in Privacy & Security, and restart. The script also detects the common trap of leftover Intel-only kexts that silently block the install. A DIN MIDI interface remains the zero-install alternative.
 
-See [the architecture and feasibility gates](docs/architecture.md). In brief:
+## Repository layout
 
-1. Record the BCR2000 and BCF2000 USB vendor/product IDs, interface descriptors, endpoint directions, and packet sizes from a target Mac.
-2. Test whether a user-space process can safely open/seize each USB-MIDI interface while CoreMIDI is using the built-in driver.
-3. If ownership works, prove bidirectional USB-MIDI transfer with a non-destructive identity request before implementing preset writes.
-4. Measure and validate a serialized USB OUT queue against BCL replies and a preset read-back.
-5. If direct ownership is unavailable or unstable, evaluate a DriverKit system extension instead.
+| Path | Purpose |
+|---|---|
+| `Kext/BCDescriptorFix.kext` | The fix. Matches VID `0x1397` PID `0x00BC` (BCR2000). |
+| `Kext/install.sh` | User installer: `install` / `verify` / `uninstall`. |
+| `Tools/bcprobe` | IOKit probe: dumps USB descriptors as the host sees them, tests interface ownership. |
+| `Tools/bcmidi` | CoreMIDI test tool: `identity`, `cc`, `monitor`, `stress`, `send`, `dump` with per-line BCL acknowledgement checking. |
+| `Tools/bcoverride` | Negative result: proves the override cannot be set from user space (even as root). |
+| `docs/architecture.md` | Investigation log: gates, kernel evidence, throughput measurements, decisions. |
+| `docs/bc-sysex-protocol.md` | BCL / SysEx protocol notes used by the tools. |
+| `docs/captures/` | Raw descriptor dumps, kernel logs, test outputs. |
 
-The correct transfer pacing is not known yet; it must be measured at the USB transport layer. Do not treat a delay value as a fix until repeated send/read-back tests pass on both models.
+Build the tools with `swift build` (Command Line Tools are enough; no Xcode needed).
 
-## Platform and signing
+## Status and open items
 
-The current workspace is macOS on Apple silicon, so the host-specific toolchain path can be exercised here. The BCR2000/BCF2000 are not yet confirmed attached, so USB descriptor capture and hardware transfer tests remain pending.
+- BCR2000: **fixed and verified.**
+- BCF2000: not yet captured. It very likely has the same flaw; it needs its own personality once a unit's descriptor is dumped with `bcprobe --descriptors-only` (PID and exact descriptor bytes must be verified, not assumed).
+- Distribution without the Recovery step requires a Developer ID signature. This project's maintainer does not hold one; a signed build from a contributor would remove step 1 of the install for everyone.
+- Apple Feedback: ask for the Linux-style clamp in `IOUSBHostFamily::validateEndpointMaxPacketSize`.
 
-A DriverKit route is viable in principle, but Apple documents MIDIDriverKit for macOS 15 and later and requires DriverKit/MIDI entitlements; USB transport also requires a device-matching entitlement. The Apple MIDI-driver sample demonstrates CoreMIDI endpoints and driver lifecycle, but its device is virtual, so USB transport and hardware matching remain project work.
+## Measured limits
+
+Through Apple's `MIDISendSysex` the transfer is lossless but paced at ~0.6 KB/s. Driving raw packets, the BCR2000 accepts ~11 KB/s cleanly and starts dropping alternate BCL lines (error 22) at ~60 KB/s. Tools that bypass `MIDISendSysex` should stay around 10 KB/s.
 
 ## References
 
-- [Apple: Creating a MIDI device driver](https://developer.apple.com/documentation/mididriverkit/creating-a-midi-device-driver)
-- [Apple: MIDIDriverKit](https://developer.apple.com/documentation/mididriverkit)
-- [Apple: USBDriverKit](https://developer.apple.com/documentation/usbdriverkit)
-- [Apple: Requesting entitlements for DriverKit development](https://developer.apple.com/documentation/driverkit/requesting_entitlements_for_driverkit_development)
-- [Eleven Rack Driver](https://github.com/Matt-Housley/eleven-rack-driver)
+- [BC MIDI Implementation (Mark van den Berg)](https://mountainutilities.eu/) — BCL/SysEx reference
+- [Linux `xhci_endpoint_init` clamp](https://github.com/torvalds/linux/blob/master/drivers/usb/host/xhci-mem.c) — the behaviour Apple lacks
+- [Eleven Rack Driver](https://github.com/Matt-Housley/eleven-rack-driver) — inspiration for the user-first install experience
