@@ -20,5 +20,13 @@ let package = Package(
                 .linkedFramework("CoreMIDI"),
             ]
         ),
+        .executableTarget(
+            name: "bcoverride",
+            path: "Tools/bcoverride",
+            linkerSettings: [
+                .linkedFramework("IOKit"),
+                .linkedFramework("CoreFoundation"),
+            ]
+        ),
     ]
 )

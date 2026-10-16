@@ -1,0 +1,13 @@
+Kernel log at BCR2000 enumeration after power-cycle (macOS 26.6.2, M-series), 2026-10-16 09:27:22
+
+(IOUSBHostFamily) usb-drd0-port-hs@00100000: AppleUSBHostPort::enumerateDeviceComplete_block_invoke: enumerated 0x1397/00bc/0100 (BCR2000 / 1) at 12 Mbps
+(IOUSBHostFamily) BCR2000@00100000: IOUSBHostDevice::setConfigurationGated: AppleUSBHostCompositeDevice selected configuration 1
+(IOUSBHostFamily) IOUSBHostFamily::validateEndpointMaxPacketSize: USB 2.0 5.[5-8].3: endpoint 0x02 invalid wMaxPacketSize 0x0004
+(IOUSBHostFamily) IOUSBHostFamily::validateEndpointMaxPacketSize: USB 2.0 5.[5-8].3: endpoint 0x02 invalid wMaxPacketSize 0x0004
+(AppleUSBXHCI)    AppleT8122USBXHCICommandRing: AppleUSBXHCICommandRing::addEndpoint: completed with result code 17   <- xHCI Parameter Error
+
+Interpretation: bulk OUT endpoint 0x02 is never created; bulk IN 0x81 (64 bytes) is. Writes from CoreMIDI succeed at the
+driver layer but have no pipe underneath. Confirmed by DIN test the same day: unit responds normally via a DIN interface.
+
+User-space override attempt (Tools/bcoverride):
+  IORegistryEntrySetCFProperty(kUSBDescriptorOverride) -> kIOReturnUnsupported

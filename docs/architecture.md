@@ -1,6 +1,6 @@
 # Architecture and Feasibility Gates
 
-**Status:** Gate A (ownership) and the CoreMIDI control experiment have both been run on a BCR2000 (2026-10-15). App-hosted ownership is blocked, and **no host-to-device output of any kind reaches the unit** through Apple's driver on this host. See the results below.
+**Status:** Root cause confirmed in the kernel log (2026-10-16): Apple's USB host stack rejects the BCR2000's bulk OUT endpoint because `wMaxPacketSize=4` is illegal, so the endpoint is never created. Candidates A and B are closed. **Candidate C** — a codeless kext that overrides the configuration descriptor — is built and awaiting a load test.
 
 ## Problem boundary
 
@@ -72,7 +72,33 @@ The pacing experiment is therefore moot on this host: there is nothing to pace. 
 
 USB 2.0 §5.8.3 only permits 8, 16, 32 or 64 bytes for a full-speed bulk endpoint. The BCR2000 declares 4. The Linux xHCI driver works around this explicitly (`xhci_endpoint_init`: "FS bulk supports 8, 16, 32 or 64", `clamp_val(max_packet, 8, 64)`), and ALSA's USB-MIDI driver then sends 4-byte URBs so the device never sees more than one event per packet. Pre-xHCI Intel Macs (EHCI/UHCI) did not validate the value. Apple's xHCI stack on M-series is the odd one out: either the OUT endpoint is never configured, or packets are built against a size the firmware rejects. Both outcomes look identical from CoreMIDI — writes "succeed", nothing arrives — and both are consistent with the community report that input works while output fails.
 
-This also predicts that the same unit will work on the same Mac through a class-compliant USB-MIDI interface with legal endpoint sizes via DIN (the known workaround), and that a BCF2000 shows the identical descriptor and symptom. Both predictions are still to be checked.
+This also predicts that the same unit will work on the same Mac through a class-compliant USB-MIDI interface with legal endpoint sizes via DIN (the known workaround), and that a BCF2000 shows the identical descriptor and symptom. **DIN confirmed 2026-10-16:** the same BCR2000 responds normally on this Mac through a DIN interface, so the unit, the BCL protocol and the host's MIDI stack are all fine; the defect is specific to the BCR2000's own USB path. The BCF2000 check is still open.
+
+#### Kernel-log confirmation (2026-10-16, after a power-cycle re-enumeration)
+
+```text
+IOUSBHostFamily::validateEndpointMaxPacketSize: USB 2.0 5.[5-8].3: endpoint 0x02 invalid wMaxPacketSize 0x0004
+AppleUSBXHCICommandRing::addEndpoint: completed with result code 17
+```
+
+xHCI completion code 17 is *Parameter Error*: the controller refused to configure the bulk OUT endpoint. Apple's stack validates the descriptor, logs the violation at debug level, and does **not** clamp to a legal size the way Linux does. The IN endpoint (64 bytes) is created normally, which is why input works. CoreMIDI's writes complete because `AppleUSBMIDI` accepts them, but there is no pipe underneath. This is no longer a hypothesis.
+
+It also means **Candidate B is dead on arrival**: a DriverKit extension would ask the same `IOUSBHostFamily` to open the same endpoint and get the same code 17.
+
+## Candidate C: codeless descriptor-override kext
+
+`IOUSBHostFamilyDefinitions.h` exposes `kUSBDescriptorOverride` (and `kUSBConfigurationDescriptorOverride`). Apple uses it in its own kexts (`IOBluetoothFamily`, `AppleUSBiBridge`, `AppleEmbeddedUSBHost`) via a codeless personality of class `AppleUSBHostMergeProperties`, which merges `IOProviderMergeProperties` into the matched `IOUSBHostDevice` before the composite driver parses the configuration. The override value is a dict `{descriptor: <raw bytes>, index: 0, languageID: 0}`.
+
+`Kext/BCDescriptorFix.kext` is exactly that: it matches `idVendor=0x1397 idProduct=0x00BC` and supplies the BCR2000's own 101-byte configuration descriptor with byte 91 changed from `0x04` to `0x08`. Nothing else is altered, so `AppleUSBMIDI` still binds and CoreMIDI still shows "BCR2000 Port 1/2/3". The device never sees the change; it only affects what the host believes the endpoint's max packet size is, and USB-MIDI OUT packets are 4 bytes, so an 8-byte host-side maximum is always satisfied.
+
+Setting the property from user space (`Tools/bcoverride`) returns `kIOReturnUnsupported`, as expected for a kernel-owned key, so the kext is the only delivery path. On Apple silicon it needs Reduced Security with user-approved kernel extensions (already the case on the test Mac, which runs a MOTU kext), installation under `/Library/Extensions`, approval in System Settings, and a reboot to rebuild the kernel collection. A codeless kext carries no executable and needs no kext-signing identity.
+
+### Gate C: does the override take effect
+
+1. After reboot, `kmutil showloaded | grep BCDescriptorFix` lists the bundle and `ioreg -l -r -n BCR2000 | grep kUSBDescriptorOverride` shows the property on the device node.
+2. `log show --predicate 'process == "kernel"' | grep validateEndpointMaxPacketSize` shows **no** new violation for endpoint 0x02 after replugging the unit.
+3. `bcmidi cc` moves the LED ring; `bcmidi identity` gets a `BCR2000 1.xx` reply.
+4. Then proceed to Gate B as written (identity, read-only BCL, temporary-preset write + read-back, both models).
 
 ### Gate B: safe transport proof
 
@@ -96,5 +122,6 @@ Apple's current documentation lists MIDIDriverKit for macOS 15 and later. Develo
 
 - ~~If direct app-hosted ownership works and transport tests pass, implement the bridge and its launch/permission UX.~~ Ownership failed (Gate A result above).
 - ~~If the CoreMIDI control experiment shows that per-line acknowledgement or packet pacing is sufficient, implement a virtual-destination bridge on top of CoreMIDI.~~ Not applicable: no output reaches the device at all, so a CoreMIDI-level bridge cannot help.
-- The remaining software route is a DriverKit extension (Candidate B) that owns the MIDIStreaming interface and opens the bulk OUT pipe itself. Its first gate is whether `IOUSBHostPipe` can be opened at all on an endpoint declaring `wMaxPacketSize=4`, and whether 4-byte writes are delivered. That is a yes/no USBDriverKit experiment before any MIDIDriverKit work.
-- If USBDriverKit cannot open or drive that endpoint either, the defect is in Apple's xHCI host stack and no third-party driver can fix it; document that and point users to DIN.
+- ~~The remaining software route is a DriverKit extension (Candidate B) that owns the MIDIStreaming interface and opens the bulk OUT pipe itself.~~ Closed by the kernel log: the host controller rejects the endpoint before any driver can open it.
+- **Candidate C** is the route. If Gate C passes, the "driver" is a codeless kext plus install/approval UX, and the BCF2000 gets a second personality once its descriptor is captured.
+- If Gate C fails (property merged but the violation still logs, or the endpoint still is not created), the override does not reach `validateEndpointMaxPacketSize` on this macOS version; file Feedback with Apple citing the Linux clamp, and point users to DIN.

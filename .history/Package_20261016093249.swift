@@ -1,0 +1,32 @@
+// swift-tools-version:5.9
+import PackageDescription
+
+let package = Package(
+    name: "midiq-bcdriver",
+    platforms: [.macOS(.v13)],
+    targets: [
+        .executableTarget(
+            name: "bcprobe",
+            path: "Tools/bcprobe",
+            linkerSettings: [
+                .linkedFramework("IOKit"),
+                .linkedFramework("CoreFoundation"),
+            ]
+        ),
+        .executableTarget(
+            name: "bcmidi",
+            path: "Tools/bcmidi",
+            linkerSettings: [
+                .linkedFramework("CoreMIDI"),
+            ]
+        ),
+        .executableTarget(
+            name: "bcoverride",
+            path: "Tools/bcoverride",
+            linkerSettings: [
+                .linkedFramework("IOKit"),
+                .linkedFramework("CoreFoundation"),
+            ]
+        ),
+    ]
+)
