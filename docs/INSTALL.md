@@ -35,8 +35,8 @@ macOS only loads kernel extensions that are signed with a paid Apple Developer c
 
 ### 2. Install
 
-1. Download the latest release zip and unpack it, or clone this repository.
-2. Open Terminal, `cd` into the `Kext` folder and run:
+1. Download [bcdriver.zip](https://github.com/midiq/bcdriver/releases/latest/download/bcdriver.zip) and unpack it.
+2. Open Terminal, `cd` into the extracted `Kext` folder and run:
 
    ```sh
    ./install.sh
