@@ -2,7 +2,7 @@
 
 An experimental macOS Apple silicon project to make outgoing USB SysEx transfers reliable with the Behringer BCR2000 and BCF2000. Normal MIDI input works; the reported failure is during preset sends to the device.
 
-**Status: feasibility work.** There is no working driver or bridge yet. The first milestone is proving that a macOS process can access the devices' USB-MIDI interface directly and control transfer submission below CoreMIDI's built-in USB driver.
+**Status: root cause found and fixed on a BCR2000 (2026-10-16).** The BCR2000 declares an illegal `wMaxPacketSize=4` on its bulk OUT endpoint; Apple's USB host stack on Apple silicon rejects the endpoint (`AppleUSBXHCICommandRing::addEndpoint` code 17), so *nothing* the host sends ever reaches the unit while input keeps working. `Kext/BCDescriptorFix.kext` is a codeless kext that overrides that one byte (4 → 8). With it loaded, identity requests are answered, a 14 KB SysEx chain transfers with zero loss through the stock CoreMIDI driver, and a preset write + read-back is byte-identical. Details and measurements in [docs/architecture.md](docs/architecture.md).
 
 ## Why this is a separate project
 

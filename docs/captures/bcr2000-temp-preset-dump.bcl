@@ -1,0 +1,16 @@
+$rev R1
+$preset
+  .name 'T15-RoundTrip           '
+  .snapshot off
+  .request off
+  .egroups 4
+  .fkeys on
+  .lock off
+  .init
+$encoder 1
+  .easypar CC 1 70 0 127 absolute
+  .showvalue off
+  .mode 1dot
+  .resolution 96 96 96 96
+  .default 0
+$end

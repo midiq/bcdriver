@@ -1,6 +1,6 @@
 # Architecture and Feasibility Gates
 
-**Status:** Root cause confirmed in the kernel log (2026-10-16): Apple's USB host stack rejects the BCR2000's bulk OUT endpoint because `wMaxPacketSize=4` is illegal, so the endpoint is never created. Candidates A and B are closed. **Candidate C** — a codeless kext that overrides the configuration descriptor — is built and awaiting a load test.
+**Status (2026-10-16): Candidate C works.** With `Kext/BCDescriptorFix.kext` loaded, the BCR2000 answers identity requests, moves LED rings, accepts a 202-line / 14 KB SysEx chain with zero loss through Apple's stock `MIDISendSysex`, and a temporary-preset write + read-back is byte-identical. Root cause: Apple's USB host stack rejects the BCR2000's bulk OUT endpoint because `wMaxPacketSize=4` is illegal; the kext overrides that one byte. Remaining: BCF2000 descriptor + personality, signing/distribution.
 
 ## Problem boundary
 
@@ -100,6 +100,22 @@ Setting the property from user space (`Tools/bcoverride`) returns `kIOReturnUnsu
 3. `bcmidi cc` moves the LED ring; `bcmidi identity` gets a `BCR2000 1.xx` reply.
 4. Then proceed to Gate B as written (identity, read-only BCL, temporary-preset write + read-back, both models).
 
+#### Gate C result (BCR2000, 2026-10-16) — PASS
+
+Install notes: on macOS 26 even a codeless kext must carry a code signature (`kmutil load` fails with "Bad code signature" otherwise); ad-hoc signing is accepted once SIP's kext check is relaxed (`csrutil enable --without kext` from Recovery, which puts Apple silicon in Permissive Security). Separately, any stale third-party kext in `/Library/Extensions` that cannot be loaded (unapproved HoRNDIS; seven x86_64-only kexts) aborts the whole auxiliary-collection rebuild with no reference to our bundle — they had to be moved aside first. `kmutil showloaded` does not list a codeless kext; the proof it is active is the device node and behaviour.
+
+- `bcprobe --descriptors-only` now reports `ENDPOINT 0x02 OUT bulk wMaxPacketSize=8` — the host sees the overridden descriptor.
+- `bcmidi identity` → **`BCR2000 1.10`**. First reply ever received over USB on this Mac.
+- `bcmidi cc` → LED ring sweeps.
+- `bcmidi stress --lines 200 --len 60` (14 031 bytes, `MIDISendSysex`, unpaced): **202/202 replies, 0 errors, in order.** 22.5 s (624 B/s) — CoreMIDI's SysEx sender throttles conservatively.
+- Raw `MIDISend` packets, 3 bytes each, timestamped `--gap-us`:
+  - 1000 µs (3.1 KB/s): PASS
+  - 320 µs (10.9 KB/s): PASS
+  - 100 µs (60 KB/s): FAIL from index 106 onward — every second line missing, the rest return BCL error 22. Same pattern with no gap at all.
+- Gate B round trip: `dump --preset 0x7F` → 16 BCL lines; `send` the same file back at 320 µs → 16/16 acked; `dump` again → **`diff` identical**.
+
+So the device's real SysEx intake limit is somewhere between 11 KB/s and 60 KB/s, i.e. far above anything CoreMIDI's default path produces. The original community report ("M-series sends too fast") was a misdiagnosis of this endpoint rejection: on Apple silicon no bytes were leaving the host at all. A ~10 KB/s ceiling is a sensible default for any tool that bypasses `MIDISendSysex`.
+
 ### Gate B: safe transport proof
 
 With the interface claimed:
@@ -123,5 +139,5 @@ Apple's current documentation lists MIDIDriverKit for macOS 15 and later. Develo
 - ~~If direct app-hosted ownership works and transport tests pass, implement the bridge and its launch/permission UX.~~ Ownership failed (Gate A result above).
 - ~~If the CoreMIDI control experiment shows that per-line acknowledgement or packet pacing is sufficient, implement a virtual-destination bridge on top of CoreMIDI.~~ Not applicable: no output reaches the device at all, so a CoreMIDI-level bridge cannot help.
 - ~~The remaining software route is a DriverKit extension (Candidate B) that owns the MIDIStreaming interface and opens the bulk OUT pipe itself.~~ Closed by the kernel log: the host controller rejects the endpoint before any driver can open it.
-- **Candidate C** is the route. If Gate C passes, the "driver" is a codeless kext plus install/approval UX, and the BCF2000 gets a second personality once its descriptor is captured.
-- If Gate C fails (property merged but the violation still logs, or the endpoint still is not created), the override does not reach `validateEndpointMaxPacketSize` on this macOS version; file Feedback with Apple citing the Linux clamp, and point users to DIN.
+- **Candidate C is the solution.** Gate C and the Gate B round trip pass on the BCR2000. The deliverable is the codeless kext plus install/approval UX.
+- Open items: capture a BCF2000 descriptor and add its personality (expected identical except PID `0x00BA`? — verify, do not assume); obtain a Developer ID with the kext-signing entitlement so users do not need Permissive Security; file Feedback with Apple asking for the Linux-style clamp in `IOUSBHostFamily`.

@@ -1,0 +1,13 @@
+Using destination "BCR2000 Port 1" / source "BCR2000 Port 1" (model 0x15)
+Sending 202 BCL lines, mode=packets chunk=3 gap-us=0 ack=false
+
+Result
+  lines sent      : 202 (14031 bytes)
+  send time       : 0.8 ms  (17529613 B/s)
+  total time      : 30006.0 ms
+  replies         : 108
+  missing indices : 106,108-200
+  reply errors    : 107:22 201:22
+  out-of-order    : 2
+  other sysex     : 0
+  verdict         : FAIL
