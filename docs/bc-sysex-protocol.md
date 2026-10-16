@@ -1,6 +1,6 @@
 # BCR2000 / BCF2000 SysEx protocol (working notes)
 
-Source: *BC MIDI Implementation* (Mark van den Berg), `~/Dropbox/MidiQ/Reference docs/B-Control/BC_MIDI_Implementation.pdf`. Only what the tools in this repo need.
+Source: _BC MIDI Implementation_ (Mark van den Berg), `~/Dropbox/MidiQ/Reference docs/B-Control/BC_MIDI_Implementation.pdf`. Only what the tools in this repo need.
 
 ## Frame
 
@@ -13,16 +13,16 @@ F0 00 20 32 <dev> <model> <cmd> <data…> F7
 
 ## Commands used here
 
-| cmd | dir | data | notes |
-|---|---|---|---|
-| `0x01` Request Identity | host→BC | — | reply `0x02` |
-| `0x02` Send Identity | BC→host | ASCII, e.g. `BCR2000 1.10` | |
-| `0x20` BCL message | both | `idxMSB idxLSB text` | 14-bit index, first line of a chain must be 0; text ≤ ~512 chars, ASCII 32–127 |
-| `0x21` BCL reply | BC→host | `idxMSB idxLSB err` | one per received `0x20`; length 11 bytes total. Same cmd byte is reused for Preset Name replies (longer message) |
-| `0x40` Request Data | host→BC | `0..31` preset, `0x7E` global+all filled presets, `0x7F` temporary preset | reply is a `0x20` chain ending in `$end` |
-| `0x41` Request Global Setup | host→BC | — | `0x20` chain |
-| `0x42` Request Preset Name | host→BC | `0..31`, `0x7E`, `0x7F` | |
-| `0x22` Select Preset | host→BC | `0..31` | no reply |
+| cmd                         | dir     | data                                                                      | notes                                                                                                            |
+| --------------------------- | ------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `0x01` Request Identity     | host→BC | —                                                                         | reply `0x02`                                                                                                     |
+| `0x02` Send Identity        | BC→host | ASCII, e.g. `BCR2000 1.10`                                                |                                                                                                                  |
+| `0x20` BCL message          | both    | `idxMSB idxLSB text`                                                      | 14-bit index, first line of a chain must be 0; text ≤ ~512 chars, ASCII 32–127                                   |
+| `0x21` BCL reply            | BC→host | `idxMSB idxLSB err`                                                       | one per received `0x20`; length 11 bytes total. Same cmd byte is reused for Preset Name replies (longer message) |
+| `0x40` Request Data         | host→BC | `0..31` preset, `0x7E` global+all filled presets, `0x7F` temporary preset | reply is a `0x20` chain ending in `$end`                                                                         |
+| `0x41` Request Global Setup | host→BC | —                                                                         | `0x20` chain                                                                                                     |
+| `0x42` Request Preset Name  | host→BC | `0..31`, `0x7E`, `0x7F`                                                   |                                                                                                                  |
+| `0x22` Select Preset        | host→BC | `0..31`                                                                   | no reply                                                                                                         |
 
 ## BCL chain rules
 
@@ -37,4 +37,4 @@ F0 00 20 32 <dev> <model> <cmd> <data…> F7
 ## Global settings relevant to timing
 
 - `.txinterval {2,5,10,20,50,100}` ms affects element output only; **does not affect SysEx dump timing**.
-- No BCL setting slows the device's SysEx *reception*; pacing must come from the host.
+- No BCL setting slows the device's SysEx _reception_; pacing must come from the host.

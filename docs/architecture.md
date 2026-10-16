@@ -81,7 +81,7 @@ IOUSBHostFamily::validateEndpointMaxPacketSize: USB 2.0 5.[5-8].3: endpoint 0x02
 AppleUSBXHCICommandRing::addEndpoint: completed with result code 17
 ```
 
-xHCI completion code 17 is *Parameter Error*: the controller refused to configure the bulk OUT endpoint. Apple's stack validates the descriptor, logs the violation at debug level, and does **not** clamp to a legal size the way Linux does. The IN endpoint (64 bytes) is created normally, which is why input works. CoreMIDI's writes complete because `AppleUSBMIDI` accepts them, but there is no pipe underneath. This is no longer a hypothesis.
+xHCI completion code 17 is _Parameter Error_: the controller refused to configure the bulk OUT endpoint. Apple's stack validates the descriptor, logs the violation at debug level, and does **not** clamp to a legal size the way Linux does. The IN endpoint (64 bytes) is created normally, which is why input works. CoreMIDI's writes complete because `AppleUSBMIDI` accepts them, but there is no pipe underneath. This is no longer a hypothesis.
 
 It also means **Candidate B is dead on arrival**: a DriverKit extension would ask the same `IOUSBHostFamily` to open the same endpoint and get the same code 17.
 

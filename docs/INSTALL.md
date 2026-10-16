@@ -2,9 +2,9 @@
 
 ## What this fixes
 
-On Apple silicon Macs the BCR2000 and BCF2000 can be *heard* but not *spoken to* over USB: encoder and fader movements arrive, but presets, LED feedback and SysEx sent **to** the unit vanish. The cause is a one-byte flaw in the units' USB descriptor (`wMaxPacketSize = 4` on the bulk OUT endpoint — the USB specification only allows 8, 16, 32 or 64). Intel Macs, Windows and Linux tolerate it; Apple silicon's USB stack refuses to create the endpoint, so nothing is ever transmitted.
+On Apple silicon Macs the BCR2000 and BCF2000 can be _heard_ but not _spoken to_ over USB: encoder and fader movements arrive, but presets, LED feedback and SysEx sent **to** the unit vanish. The cause is a one-byte flaw in the units' USB descriptor (`wMaxPacketSize = 4` on the bulk OUT endpoint — the USB specification only allows 8, 16, 32 or 64). Intel Macs, Windows and Linux tolerate it; Apple silicon's USB stack refuses to create the endpoint, so nothing is ever transmitted.
 
-`BCDescriptorFix.kext` is a *codeless* kernel extension — a configuration file, no executable code — that tells macOS to read `8` instead of `4`. Everything else, including Apple's own USB-MIDI driver and the CoreMIDI ports your software already uses, stays the same.
+`BCDescriptorFix.kext` is a _codeless_ kernel extension — a configuration file, no executable code — that tells macOS to read `8` instead of `4`. Everything else, including Apple's own USB-MIDI driver and the CoreMIDI ports your software already uses, stays the same.
 
 ## What it costs
 
@@ -30,7 +30,8 @@ macOS only loads kernel extensions that are signed with a paid Apple Developer c
    ```
 
    Confirm the "unsupported configuration" warning and enter your password.
-5. Choose  → **Restart**.
+
+5. Choose → **Restart**.
 
 ### 2. Install
 
@@ -42,7 +43,8 @@ macOS only loads kernel extensions that are signed with a paid Apple Developer c
    ```
 
    It checks the security setting, warns about any leftover Intel-only extensions that would block the install (and offers to move them to `~/Desktop/kext-backup`), signs and copies the kext, and asks macOS to load it. You will be asked for your password once.
-3. If **System Settings → Privacy & Security** shows *"System software … was blocked"*, click **Allow**.
+
+3. If **System Settings → Privacy & Security** shows _"System software … was blocked"_, click **Allow**.
 4. **Restart** the Mac.
 
 ### 3. Verify
@@ -65,13 +67,13 @@ then restart. To restore full SIP, repeat step 1 with `csrutil enable`.
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
-|---|---|
-| `Authenticating extension failed: Bad code signature` | Step 1 was not done (SIP kext check still on). |
-| Install reports Intel-only kexts | Old drivers from a migrated Intel Mac. Let the script move them aside; nothing on an Apple silicon Mac can use them. |
-| `verify` says the endpoint was still rejected | You did not restart after installing, or the unit was not re-plugged/power-cycled after the restart. |
-| No "Allow" button appears | Normal if the kext was already approved once. Just restart. |
-| Device works, but a large preset send is slow | Expected: Apple's SysEx sender paces conservatively (~0.6 KB/s). The unit itself handles ~10 KB/s. |
+| Symptom                                               | Cause / fix                                                                                                          |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `Authenticating extension failed: Bad code signature` | Step 1 was not done (SIP kext check still on).                                                                       |
+| Install reports Intel-only kexts                      | Old drivers from a migrated Intel Mac. Let the script move them aside; nothing on an Apple silicon Mac can use them. |
+| `verify` says the endpoint was still rejected         | You did not restart after installing, or the unit was not re-plugged/power-cycled after the restart.                 |
+| No "Allow" button appears                             | Normal if the kext was already approved once. Just restart.                                                          |
+| Device works, but a large preset send is slow         | Expected: Apple's SysEx sender paces conservatively (~0.6 KB/s). The unit itself handles ~10 KB/s.                   |
 
 ## Alternatives
 

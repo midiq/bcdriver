@@ -4,7 +4,7 @@ Behringer's BCR2000 and BCF2000 are class-compliant USB-MIDI controllers that wo
 
 **Root cause (found 2026-10-16, see [docs/architecture.md](docs/architecture.md)):** the units declare an illegal `wMaxPacketSize = 4` on their bulk OUT endpoint (USB 2.0 §5.8.3 allows 8/16/32/64). Linux clamps it; Apple's USB host stack on M-series rejects the endpoint outright (`AppleUSBXHCICommandRing::addEndpoint` → code 17), so the OUT pipe is never created. Writes "succeed" at the CoreMIDI layer and go nowhere. The widely repeated explanation — "M-series sends too fast" — is wrong; no bytes were leaving the host.
 
-**The fix:** `Kext/BCDescriptorFix.kext`, a *codeless* kernel extension (a plist, no executable) that uses Apple's own `kUSBDescriptorOverride` mechanism to present the device's descriptor with that one byte changed, 4 → 8. Apple's stock USB-MIDI driver then works normally. Verified on a BCR2000 (firmware 1.10, macOS 26.6.2): identity replies, LED feedback, a 14 KB / 202-line SysEx chain with zero loss, and a preset write + read-back that is byte-identical.
+**The fix:** `Kext/BCDescriptorFix.kext`, a _codeless_ kernel extension (a plist, no executable) that uses Apple's own `kUSBDescriptorOverride` mechanism to present the device's descriptor with that one byte changed, 4 → 8. Apple's stock USB-MIDI driver then works normally. Verified on a BCR2000 (firmware 1.10, macOS 26.6.2): identity replies, LED feedback, a 14 KB / 202-line SysEx chain with zero loss, and a preset write + read-back that is byte-identical.
 
 ## Install
 
@@ -14,16 +14,16 @@ Short version: this kext is not signed with a paid Apple Developer certificate, 
 
 ## Repository layout
 
-| Path | Purpose |
-|---|---|
-| `Kext/BCDescriptorFix.kext` | The fix. Matches VID `0x1397` PID `0x00BC` (BCR2000). |
-| `Kext/install.sh` | User installer: `install` / `verify` / `uninstall`. |
-| `Tools/bcprobe` | IOKit probe: dumps USB descriptors as the host sees them, tests interface ownership. |
-| `Tools/bcmidi` | CoreMIDI test tool: `identity`, `cc`, `monitor`, `stress`, `send`, `dump` with per-line BCL acknowledgement checking. |
-| `Tools/bcoverride` | Negative result: proves the override cannot be set from user space (even as root). |
-| `docs/architecture.md` | Investigation log: gates, kernel evidence, throughput measurements, decisions. |
-| `docs/bc-sysex-protocol.md` | BCL / SysEx protocol notes used by the tools. |
-| `docs/captures/` | Raw descriptor dumps, kernel logs, test outputs. |
+| Path                        | Purpose                                                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `Kext/BCDescriptorFix.kext` | The fix. Matches VID `0x1397` PID `0x00BC` (BCR2000).                                                                 |
+| `Kext/install.sh`           | User installer: `install` / `verify` / `uninstall`.                                                                   |
+| `Tools/bcprobe`             | IOKit probe: dumps USB descriptors as the host sees them, tests interface ownership.                                  |
+| `Tools/bcmidi`              | CoreMIDI test tool: `identity`, `cc`, `monitor`, `stress`, `send`, `dump` with per-line BCL acknowledgement checking. |
+| `Tools/bcoverride`          | Negative result: proves the override cannot be set from user space (even as root).                                    |
+| `docs/architecture.md`      | Investigation log: gates, kernel evidence, throughput measurements, decisions.                                        |
+| `docs/bc-sysex-protocol.md` | BCL / SysEx protocol notes used by the tools.                                                                         |
+| `docs/captures/`            | Raw descriptor dumps, kernel logs, test outputs.                                                                      |
 
 Build the tools with `swift build` (Command Line Tools are enough; no Xcode needed).
 

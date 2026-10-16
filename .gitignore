@@ -19,3 +19,6 @@ dist/
 .build/
 *.swiftpm
 Package.resolved
+
+# VS Code Local History
+.history/
