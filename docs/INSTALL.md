@@ -4,7 +4,7 @@
 
 On Apple silicon Macs the BCR2000 and BCF2000 can be _heard_ but not _spoken to_ over USB: encoder and fader movements arrive, but presets, LED feedback and SysEx sent **to** the unit vanish. The cause is a one-byte flaw in the units' USB descriptor (`wMaxPacketSize = 4` on the bulk OUT endpoint — the USB specification only allows 8, 16, 32 or 64). Intel Macs, Windows and Linux tolerate it; Apple silicon's USB stack refuses to create the endpoint, so nothing is ever transmitted.
 
-`BCDescriptorFix.kext` is a _codeless_ kernel extension — a configuration file, no executable code — that tells macOS to read `8` instead of `4`. Everything else, including Apple's own USB-MIDI driver and the CoreMIDI ports your software already uses, stays the same.
+The codeless kernel extension included here tells macOS to read `8` instead of `4` for the BCR2000's bulk OUT endpoint. It leaves Apple's USB-MIDI driver and CoreMIDI ports unchanged. This release is verified on the BCR2000; BCF2000 support is not yet verified.
 
 ## What it costs
 
@@ -79,8 +79,3 @@ then restart. To restore full SIP, repeat step 1 with `csrutil enable`.
 
 - **DIN MIDI interface.** Any class-compliant USB-MIDI interface with 5-pin DIN cables to the unit works today with no changes to the Mac. Slower (31.25 kbit/s), one more box.
 - **Signed build.** If someone with an Apple Developer ID signs this exact kext, step 1 disappears for everyone; users then only approve it in Privacy & Security. Contributions welcome.
-- **Ask Apple.** Linux clamps illegal full-speed bulk packet sizes to the legal minimum instead of rejecting the endpoint. Filing Feedback with Apple citing `IOUSBHostFamily::validateEndpointMaxPacketSize` raises the chance macOS does the same one day.
-
-## Technical details
-
-See [architecture.md](architecture.md) for the investigation, kernel-log evidence, and throughput measurements, and [bc-sysex-protocol.md](bc-sysex-protocol.md) for the BCL/SysEx notes.

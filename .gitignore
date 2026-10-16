@@ -15,10 +15,5 @@ dist/
 *.app/
 *.pkg
 
-# SwiftPM
-.build/
-*.swiftpm
-Package.resolved
-
 # VS Code Local History
 .history/

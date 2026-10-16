@@ -1,5 +1,0 @@
-Interface 1: class=0x01 subclass=0x03 endpoints=2  [MIDIStreaming]
-  USBInterfaceOpen      -> kIOReturnExclusiveAccess
-  USBInterfaceOpenSeize -> kIOReturnExclusiveAccess
-
-1 device(s) probed.

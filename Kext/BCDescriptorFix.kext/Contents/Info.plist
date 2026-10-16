@@ -9,7 +9,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>BCDescriptorFix</string>
+	<string>BCR/BCF USB Fix</string>
 	<key>CFBundlePackageType</key>
 	<string>KEXT</string>
 	<key>CFBundleShortVersionString</key>
@@ -25,7 +25,7 @@
 		into the IOUSBHostDevice before the composite driver reads the configuration.
 		The descriptor below is the BCR2000's own 101-byte configuration descriptor with
 		one byte changed: bulk OUT endpoint 0x02 wMaxPacketSize 4 -> 8 (offset 91).
-		Apple's xHCI stack rejects 4 (USB 2.0 §5.8.3), see docs/architecture.md.
+		Apple's xHCI stack rejects 4; USB 2.0 §5.8.3 permits 8, 16, 32, or 64.
 		-->
 		<key>Behringer BCR2000 bulk OUT wMaxPacketSize fix</key>
 		<dict>

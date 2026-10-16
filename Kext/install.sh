@@ -1,5 +1,5 @@
 #!/bin/zsh
-# BCDescriptorFix installer for Apple silicon Macs.
+# BCR2000/BCF2000 USB fix installer for Apple silicon Macs.
 # Usage: ./install.sh [install|verify|uninstall]
 set -euo pipefail
 
