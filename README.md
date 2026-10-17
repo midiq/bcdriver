@@ -39,7 +39,7 @@ The fix is in `Kext/BCDescriptorFix.kext` and has been verified on a BCR2000 (fi
    ./install.sh verify
    ```
 
-   Send a request to the controller from your MIDI editor; it should answer and its LED rings should respond to MIDI.
+   Send a request to the controller from [BCEditor](https://bceditor.com) or another MIDI editor; it should answer and its LED rings should respond to MIDI.
 
 ## Uninstall
 
